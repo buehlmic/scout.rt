@@ -41,6 +41,7 @@ module.exports = (env, args) => {
       });
   }
 
+  const minimizerTarget = ['firefox69', 'chrome71', 'safari12.1'];
   const config = {
     target: 'web',
     mode: args.mode,
@@ -48,10 +49,10 @@ module.exports = (env, args) => {
     // Other source map types may increase build performance but decrease debugging experience
     // (e.g. wrong this in arrow functions with inline-cheap-module-source-map or not having original source code at all (code after babel transpilation instead of before) with eval types).
     // In production mode create external source maps without source code to map stack traces.
-    // Otherwise stack traces would point to the minified source code which makes it quite impossible to analyze productive issues.
+    // Otherwise, stack traces would point to the minified source code which makes it quite impossible to analyze productive issues.
     devtool: devMode ? false : 'nosources-source-map',
+    ignoreWarnings: [(webpackError, compilation) => isWarningIgnored(devMode, webpackError, compilation)],
     resolve: {
-
       // no automatic polyfills. clients must add the desired polyfills themselves.
       fallback: {
         assert: false,
@@ -207,17 +208,28 @@ module.exports = (env, args) => {
     config.optimization.minimizer = [
       // minify css
       new CssMinimizerPlugin({
-        test: /\.min\.css$/g,
+        test: /\.min\.css$/i, // only minimize required files
+        exclude: /res[\\/]/i, // exclude resources output directory from minimizing as these files are copied
+        parallel: 4, // best ratio between memory consumption and performance on most systems
+        minify: CssMinimizerPlugin.esbuildMinify,
         minimizerOptions: {
-          preset: ['default', {
-            discardComments: {removeAll: true}
-          }]
+          logLevel: 'error', // show messages directly to see the details. The message passed to webpack is only an object which is ignored in isWarningIgnored
+          sourcemap: false, // no sourcemaps for css in prod build (needs more heap memory instead)
+          charset: 'utf8', // default is ASCII which requires more escaping. UTF-8 allows for more compact code.
+          target: minimizerTarget
         }
       }),
       // minify js
       new TerserPlugin({
-        test: /\.js(\?.*)?$/i,
-        parallel: 4
+        test: /\.min\.js$/i, // only minimize required files
+        exclude: [/log4javascript-1\.4\.9[\\/]/i, /res[\\/]/i], // exclude resources output directory from minimizing as these files are copied
+        parallel: 4, // best ratio between memory consumption and performance on most systems
+        minify: TerserPlugin.esbuildMinify,
+        terserOptions: {
+          logLevel: 'error', // show messages directly to see the details. The message passed to webpack is only an object which is ignored in isWarningIgnored
+          charset: 'utf8', // default is ASCII which requires more escaping. UTF-8 allows for more compact code.
+          target: minimizerTarget
+        }
       })
     ];
   }
@@ -338,6 +350,13 @@ function nvl(arg, defaultValue) {
     return defaultValue;
   }
   return arg;
+}
+
+function isWarningIgnored(devMode, webpackError) {
+  if (webpackError && webpackError.message === '[object Object]') {
+    return true; // esbuild warnings are not correctly passed to webpack. ignore them. The actual message is printed with the esbuild flag 'logLevel' (see below)
+  }
+  return false;
 }
 
 /**
