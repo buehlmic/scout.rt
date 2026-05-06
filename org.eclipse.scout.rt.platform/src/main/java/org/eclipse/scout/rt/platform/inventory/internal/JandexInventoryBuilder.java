@@ -85,9 +85,9 @@ public class JandexInventoryBuilder {
     return m_rebuildStrategy;
   }
 
-  public void scanAllModules() {
+  public void scanAllModules(ClassLoader classloader) {
     try {
-      Collections.list(getClass().getClassLoader().getResources(SCOUT_XML_PATH))
+      Collections.list(classloader.getResources(SCOUT_XML_PATH))
           .parallelStream()
           .map(this::findIndexUri)
           .forEach(this::scanModule);
@@ -95,6 +95,10 @@ public class JandexInventoryBuilder {
     catch (IOException ex) {
       throw new PlatformException("Error while reading resources '{}'", SCOUT_XML_PATH, ex);
     }
+  }
+
+  public void scanAllModules() {
+    scanAllModules(getClass().getClassLoader());
   }
 
   public Index scanModule(URI indexUri) {

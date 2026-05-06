@@ -91,6 +91,7 @@ public class DataObjectInventory {
 
   @PostConstruct
   protected void init() {
+    long t0 = System.nanoTime();
     ClassInventory.get()
         .getKnownAnnotatedTypes(TypeName.class)
         .stream()
@@ -115,6 +116,8 @@ public class DataObjectInventory {
     //noinspection unchecked
     BEANS.all(IDataObjectVisitorExtension.class).forEach(this::registerVisitorExtension);
 
+    long nanos = System.nanoTime() - t0;
+    LOG.info("Loading DataObjectInventory took {}ms", StringUtility.formatNanos(nanos));
     LOG.info("Registry initialized, found {} {} implementations with @{} annotation and {} implementations with @{} annotation.",
         m_typeNameToClassMap.size(), IDoEntity.class.getSimpleName(), TypeName.class.getSimpleName(),
         m_classToTypeVersion.size(), TypeVersion.class.getSimpleName());

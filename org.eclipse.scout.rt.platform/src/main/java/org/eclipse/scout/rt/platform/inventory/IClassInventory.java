@@ -11,6 +11,7 @@ package org.eclipse.scout.rt.platform.inventory;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Target;
+import java.util.List;
 import java.util.Set;
 
 public interface IClassInventory {
@@ -50,4 +51,11 @@ public interface IClassInventory {
    * @return all registered types annotated with the annotation
    */
   Set<IClassInfo> getKnownAnnotatedTypes(Class<?> annotation);
+
+  /**
+   * @return all classloaders used for building this inventory. The system class loader is always the first one in the list.
+   */
+  default List<ClassLoader> getClassLoaders() {
+    return List.of(ClassLoader.getSystemClassLoader());
+  }
 }
