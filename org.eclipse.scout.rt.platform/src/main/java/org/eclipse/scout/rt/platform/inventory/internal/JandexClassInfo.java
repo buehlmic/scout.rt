@@ -33,10 +33,16 @@ public class JandexClassInfo implements IClassInfo {
 
   private final ClassInfo m_classInfo;
   private volatile Class<?> m_class;
+  private final ClassLoader m_classLoader;
 
   public JandexClassInfo(ClassInfo classInfo) {
+    this(classInfo, ClassLoader.getSystemClassLoader());
+  }
+
+  public JandexClassInfo(ClassInfo classInfo, ClassLoader classLoader) {
     Assertions.assertNotNull(classInfo);
     m_classInfo = classInfo;
+    m_classLoader = classLoader;
   }
 
   @Override
@@ -54,10 +60,10 @@ public class JandexClassInfo implements IClassInfo {
       synchronized (this) {
         if (m_class == null) {
           try {
-            m_class = Class.forName(name());
+            m_class = Class.forName(name(), true, m_classLoader);
           }
           catch (ClassNotFoundException | NoClassDefFoundError ex) {
-            throw new PlatformException("Error loading class '" + name() + "' with flags 0x" + Integer.toHexString(flags()), ex);
+            throw new PlatformException("Error loading class '{}' with classloader '{}' and flags 0x", name(), m_classLoader, Integer.toHexString(flags()), ex);
           }
         }
       }
@@ -183,7 +189,7 @@ public class JandexClassInfo implements IClassInfo {
 
   @Override
   public int hashCode() {
-    return m_classInfo.hashCode();
+    return 31 * m_classLoader.hashCode() + (m_classInfo != null && m_classInfo.name() != null ? m_classInfo.name().hashCode() : 0);
   }
 
   @Override
@@ -197,15 +203,25 @@ public class JandexClassInfo implements IClassInfo {
     if (getClass() != obj.getClass()) {
       return false;
     }
+
     JandexClassInfo other = (JandexClassInfo) obj;
-    if (m_classInfo == null) {
-      if (other.m_classInfo != null) {
-        return false;
-      }
-    }
-    else if (!m_classInfo.equals(other.m_classInfo)) {
+    if (m_classLoader != ((JandexClassInfo) obj).m_classLoader) {
       return false;
     }
-    return true;
+
+    if (m_classInfo == null) {
+      return other.m_classInfo == null;
+    }
+    if (other.m_classInfo == null) {
+      return false;
+    }
+
+    if (m_classInfo.name() == null) {
+      return other.m_classInfo.name() == null;
+    }
+    if (other.m_classInfo.name() == null) {
+      return false;
+    }
+    return m_classInfo.name().equals(other.m_classInfo.name());
   }
 }

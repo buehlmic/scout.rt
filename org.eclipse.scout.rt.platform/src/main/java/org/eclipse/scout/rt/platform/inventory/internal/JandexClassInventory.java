@@ -10,25 +10,55 @@
 package org.eclipse.scout.rt.platform.inventory.internal;
 
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.scout.rt.platform.exception.ProcessingException;
 import org.eclipse.scout.rt.platform.inventory.IClassInfo;
 import org.eclipse.scout.rt.platform.inventory.IClassInventory;
 import org.eclipse.scout.rt.platform.util.Assertions;
+import org.eclipse.scout.rt.platform.util.Pair;
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.AnnotationTarget;
 import org.jboss.jandex.ClassInfo;
+import org.jboss.jandex.CompositeIndex;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.IndexView;
+import org.jboss.jandex.StackedIndex;
 
 public class JandexClassInventory implements IClassInventory {
 
   private final IndexView m_index;
+  private Map<DotName, ClassLoader> nameToClassLoader = new HashMap<>();
+  private List<ClassLoader> m_classLoaders;
+
+  public JandexClassInventory(IndexView baseIndex, List<Pair<IndexView, ClassLoader>> indicesToClassLoader) {
+    List<IndexView> indices = new ArrayList<>(indicesToClassLoader.size());
+    Set<ClassLoader> classLoaders = new HashSet<>();
+    classLoaders.add(ClassLoader.getSystemClassLoader());
+    for (Pair<IndexView, ClassLoader> pair : indicesToClassLoader) {
+      IndexView index = pair.getLeft();
+      ClassLoader classLoader = pair.getRight();
+      indices.add(index);
+      index.getKnownClasses().forEach(classInfo -> nameToClassLoader.put(classInfo.name(), classLoader));
+      classLoaders.add(classLoader);
+    }
+
+    baseIndex.getKnownClasses().forEach(classInfo -> nameToClassLoader.put(classInfo.name(), ClassLoader.getSystemClassLoader()));
+    indices.add(baseIndex);
+
+    m_index = CompositeIndex.create(indices);
+    m_classLoaders = List.copyOf(classLoaders);
+  }
 
   public JandexClassInventory(IndexView index) {
-    m_index = index;
+    this(index, Collections.emptyList());
   }
 
   @Override
@@ -94,13 +124,18 @@ public class JandexClassInventory implements IClassInventory {
     return convertAnnotationInstance(annotationInstances);
   }
 
+  @Override
+  public List<ClassLoader> getClassLoaders() {
+    return m_classLoaders;
+  }
+
   public IClassInfo getClassInfo(String queryClassName) {
     Assertions.assertNotNull(queryClassName);
     ClassInfo ci = m_index.getClassByName(DotName.createSimple(queryClassName));
     if (ci == null) {
       return null;
     }
-    return new JandexClassInfo(ci);
+    return mapClassInfo(ci);
   }
 
   public IClassInfo getClassInfo(Class<?> queryClass) {
@@ -109,17 +144,18 @@ public class JandexClassInventory implements IClassInventory {
     if (ci == null) {
       return null;
     }
-    return new JandexClassInfo(ci);
+
+    return mapClassInfo(ci);
   }
 
   protected Set<IClassInfo> convertClassInfos(Collection<ClassInfo> classInfos1, Collection<ClassInfo> optionalClassInfos2) {
     Set<IClassInfo> result = new HashSet<>(classInfos1.size() + (optionalClassInfos2 != null ? optionalClassInfos2.size() : 0));
     for (ClassInfo classInfo : classInfos1) {
-      result.add(new JandexClassInfo(classInfo));
+      result.add(mapClassInfo(classInfo));
     }
     if (optionalClassInfos2 != null) {
       for (ClassInfo classInfo : optionalClassInfos2) {
-        result.add(new JandexClassInfo(classInfo));
+        result.add(mapClassInfo(classInfo));
       }
     }
     return result;
@@ -129,10 +165,19 @@ public class JandexClassInventory implements IClassInventory {
     Set<IClassInfo> result = new HashSet<>(annotationInstances.size());
     for (AnnotationInstance annotationInstance : annotationInstances) {
       AnnotationTarget target = annotationInstance.target();
-      if (target instanceof ClassInfo) {
-        result.add(new JandexClassInfo((ClassInfo) target));
+      if (target instanceof ClassInfo classInfo) {
+        result.add(mapClassInfo(classInfo));
       }
     }
     return result;
+  }
+
+  private IClassInfo mapClassInfo(ClassInfo classInfo) {
+    ClassLoader classLoader = nameToClassLoader.get(classInfo.name());
+    if (classLoader == null) {
+      throw new ProcessingException("Class {} not found", classInfo.name());
+    }
+
+    return new JandexClassInfo(classInfo, classLoader);
   }
 }
